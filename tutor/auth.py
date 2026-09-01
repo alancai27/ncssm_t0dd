@@ -142,10 +142,30 @@ def complete(redirect_uri, query: dict, flow_cookie: str):
             "client_secret": CLIENT_SECRET, "code_verifier": flow.get("verifier", ""),
         })
     except urllib.error.HTTPError as e:
+        # Read Google's actual error code. Blaming the client secret for every
+        # 400 sends people to check credentials that were already correct --
+        # by far the most common 400 here is a replayed authorization code,
+        # which happens whenever someone reloads the callback URL.
+        detail = ""
+        try:
+            detail = json.loads(e.read()).get("error", "")
+        except Exception:
+            pass
+        if detail == "invalid_grant":
+            raise AuthError(
+                "That sign-in link was already used or has expired. Codes are "
+                "single-use, so reloading the callback page will always fail. "
+                "Start again from the sign-in page."
+            ) from None
+        if detail == "redirect_uri_mismatch":
+            raise AuthError(
+                f"The redirect URI this server uses ({redirect_uri}) is not "
+                f"registered on the OAuth client in Google Cloud Console."
+            ) from None
         raise AuthError(
-            f"Google rejected the token exchange ({e.code}). Usually the client "
-            f"secret is wrong, or the redirect URI here does not exactly match "
-            f"the one registered in Google Cloud Console."
+            f"Google rejected the token exchange ({e.code}"
+            f"{': ' + detail if detail else ''}). Check that GOOGLE_CLIENT_SECRET "
+            f"is correct for this client ID."
         ) from None
 
     access_token = tok.get("access_token")
