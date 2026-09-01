@@ -68,9 +68,11 @@ web/               login, tutorial, chat UI
 - Intent classifier (the prose gap above)
 - Transcript logging, though the tutorial tells students their instructor can
   read conversations. **That promise is not yet backed by anything.**
-- Retrieval over real course modules. `content/courses.json` is a placeholder
-  catalog with invented course names and modules; replace it with real CS
-  department material before students use this.
+- Course modules. `content/courses.json` has the real NCSSM CS course list, but
+  every `modules` array is empty. With no modules loaded, `prompts.build()`
+  swaps the "cite module IDs" rule for an explicit do-not-invent instruction,
+  so T0dd explains concepts without fabricating citations. Fill the arrays in
+  to turn citations back on, per course.
 
 ## Credits
 

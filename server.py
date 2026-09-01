@@ -48,10 +48,10 @@ CANNED = [
              "        if (arr[i] > max) { max = arr[i]; }\n    }\n    return max;\n}\n```"),
     ("ta",   "I'm not able to produce assignment solutions here regardless of role. Staff get "
              "solutions through the course materials, not through me.\n\nHappy to keep helping "
-             "with concepts. Which part of the rubric are you thinking about? [Module 4.2]"),
+             "with concepts. Which part of the rubric are you thinking about?"),
     ("_",    "Good place to start. Before you write anything: if the array is `[3, 9, 2]`, what "
              "should your \"largest so far\" variable hold *before* you compare anything? That "
-             "one decision is where most findMax bugs come from. [Module 4.2]"),
+             "one decision is where most findMax bugs come from."),
 ]
 
 
