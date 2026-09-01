@@ -1,0 +1,2 @@
+# T0dd has no third-party runtime dependencies. Vercel needs this file (or a
+# pyproject) to detect the project as Python. Deliberately empty.

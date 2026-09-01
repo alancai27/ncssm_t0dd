@@ -26,6 +26,20 @@ class Provider:
 
 # Swap PROVIDER to move the whole app between backends.
 PROVIDERS = {
+    # --- Gemini via Google's OpenAI-compatibility endpoint ---
+    # Note: NCSSM already runs on Google Workspace (sign-in is @ncssm.edu
+    # Google accounts), so Google is likely already a data processor for the
+    # school. That is a different privacy posture than adding a new vendor.
+    "gemini": Provider(
+        name="gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        model=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"),
+        api_key_env="GEMINI_API_KEY",
+        # Rates left at 0: verify current Gemini pricing before trusting the
+        # cost meter. Flash tiers also have a free quota via AI Studio.
+        usd_per_m_in=0.0, usd_per_m_out=0.0,
+    ),
+
     # --- OpenRouter: one key, every model; good for dev + the pilot ---
     "openrouter": Provider(
         name="openrouter",
@@ -76,7 +90,7 @@ PROVIDERS = {
     ),
 }
 
-PROVIDER = PROVIDERS[os.environ.get("TUTOR_PROVIDER", "openrouter")]
+PROVIDER = PROVIDERS[os.environ.get("TUTOR_PROVIDER", "gemini")]
 
 # The classifier is a cheap, high-volume call; it does not need the big model.
 # Point it at a small model on the same backend to cut cost ~10x.

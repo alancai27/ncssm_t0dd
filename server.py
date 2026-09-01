@@ -1,17 +1,34 @@
 #!/usr/bin/env python3.11
-"""Local dev server. Stdlib only -- no flask, no node, no build step.
+"""T0dd server.
 
-  python3.11 server.py          -> http://localhost:8000
-  OPENROUTER_API_KEY=... python3.11 server.py --live
+Routing lives in dispatch(), which is transport-agnostic: it takes a request
+as plain values and returns (status, headers, body). Two thin adapters call it.
+
+  * H            -- BaseHTTPRequestHandler, for `python3.11 server.py` locally.
+  * app          -- WSGI, which is what Vercel's Python runtime loads.
+
+WSGI is a protocol rather than a library, so supporting Vercel costs no
+dependencies. `server.py` is one of the entrypoint filenames Vercel looks for,
+and `app` is the top-level name it expects.
+
+  python3.11 server.py            offline demo
+  python3.11 server.py --live     real model calls
 """
-import json, os, sys, mimetypes
+import json
+import mimetypes
+import os
+import sys
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, quote, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
 def _load_env(path=None):
-    """Minimal .env loader. Must run before tutor.auth imports, since that
-    module reads os.environ at module level. Real env vars win."""
+    """Minimal .env loader. Must run before tutor.auth/store import, since both
+    read os.environ at module level. Real env vars win, which is what makes
+    Vercel's dashboard-set variables take precedence."""
     path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if not os.path.isfile(path):
         return
@@ -23,25 +40,23 @@ def _load_env(path=None):
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
+
 _load_env()
 
-from http.cookies import SimpleCookie
-from urllib.parse import urlparse, parse_qs, quote
-
-from tutor import auth, courses, store
-from tutor.config import PROVIDER
-from tutor.guards import scan, redact
-from tutor.prompts import build
+from tutor import auth, courses, store          # noqa: E402
+from tutor.config import PROVIDER               # noqa: E402
+from tutor.guards import redact, scan           # noqa: E402
+from tutor.prompts import build                 # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-LIVE = "--live" in sys.argv
 PORT = int(os.environ.get("PORT", "8000"))
+# argv is empty under WSGI, so live mode is also settable by env.
+LIVE = "--live" in sys.argv or os.environ.get("TODD_LIVE") == "1"
 
 SCHOOL = "NCSSM–Durham"
 REDIRECT_URI = os.environ.get("TODD_REDIRECT_URI", f"http://localhost:{PORT}/auth/callback")
 SESSION_COOKIE, FLOW_COOKIE = "todd_session", "todd_flow"
 
-# Offline canned replies so the UI is fully explorable with no API key.
 CANNED = [
     ("code", "Sure! Here's findMax:\n\n```java\npublic static int findMax(int[] arr) {\n"
              "    int max = arr[0];\n    for (int i = 1; i < arr.length; i++) {\n"
@@ -55,7 +70,7 @@ CANNED = [
 ]
 
 
-def reply_for(msg: str) -> str:
+def reply_for(msg):
     m = msg.lower()
     # Role-claim check must come FIRST: "i need the solution" contains "solution"
     # and would otherwise fall into the code branch.
@@ -67,169 +82,211 @@ def reply_for(msg: str) -> str:
     return CANNED[2][1]
 
 
+# ------------------------------------------------------------------ helpers
+def _json(code, obj, cookies=()):
+    return code, _hdrs("application/json", cookies), json.dumps(obj).encode()
+
+
+def _hdrs(ctype, cookies=()):
+    h = [("Content-Type", ctype)]
+    for name, val, age in cookies:
+        c = f"{name}={val}; Path=/; HttpOnly; SameSite=Lax"
+        if age is not None:
+            c += f"; Max-Age={age}"
+        # Secure is required for SameSite cookies over HTTPS deployments.
+        if REDIRECT_URI.startswith("https://"):
+            c += "; Secure"
+        h.append(("Set-Cookie", c))
+    return h
+
+
+def _redirect(to, cookies=()):
+    return 302, _hdrs("text/plain", cookies) + [("Location", to)], b""
+
+
+def _user_from(cookies):
+    data = auth.unsign(cookies.get(SESSION_COOKIE, ""))
+    return data.get("user") if data else None
+
+
+def _login_page(error=None):
+    with open(os.path.join(ROOT, "login.html")) as f:
+        html = f.read()
+    if error:
+        html = html.replace("<!--ERROR-->", f'<div class="err">{error}</div>')
+    if not auth.configured():
+        html = html.replace('href="/auth/google" id="gbtn"',
+                            'href="#" id="gbtn" aria-disabled="true"')
+        html = html.replace("<!--ERROR-->",
+                            '<div class="err">Google sign-in is not configured on this '
+                            'server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</div>')
+    return 200, _hdrs("text/html; charset=utf-8"), html.encode()
+
+
+def _static(path):
+    fp = os.path.normpath(os.path.join(ROOT, path.lstrip("/")))
+    if not fp.startswith(ROOT) or not os.path.isfile(fp):
+        return 404, _hdrs("text/plain"), b"not found"
+    ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
+    with open(fp, "rb") as f:
+        return 200, _hdrs(ctype), f.read()
+
+
+# ----------------------------------------------------------------- dispatch
+def dispatch(method, raw_path, cookies, body):
+    """(status, [(header, value)], bytes). No transport details in here."""
+    url = urlparse(raw_path)
+    route = url.path
+    q = {k: v[0] for k, v in parse_qs(url.query).items()}
+    user = _user_from(cookies)
+
+    if method == "POST":
+        return _post(route, user, body)
+
+    if route == "/login":
+        return _login_page(q.get("error"))
+
+    if route == "/logout":
+        return _redirect("/login", [(SESSION_COOKIE, "", 0)])
+
+    if route == "/auth/google":
+        try:
+            goto, flow = auth.begin(REDIRECT_URI, q.get("next"))
+        except auth.AuthError as e:
+            return _redirect("/login?error=" + quote(str(e)))
+        return _redirect(goto, [(FLOW_COOKIE, flow, 600)])
+
+    if route == "/auth/callback":
+        try:
+            u, nxt = auth.complete(REDIRECT_URI, q, cookies.get(FLOW_COOKIE, ""))
+        except auth.AuthError as e:
+            return _redirect("/login?error=" + quote(str(e)), [(FLOW_COOKIE, "", 0)])
+        store.touch_user(u["email"], u["name"])
+        tok = auth.sign({"user": u})
+        return _redirect(auth.safe_next(nxt) or "/",
+                         [(SESSION_COOKIE, tok, auth.MAX_AGE), (FLOW_COOKIE, "", 0)])
+
+    if route == "/api/courses":
+        if not user:
+            return _json(401, {"error": "Signed out."})
+        return _json(200, {"courses": courses.all_courses()})
+
+    if route == "/api/me":
+        return _json(200 if user else 401, {"user": user})
+
+    if route == "/welcome":
+        if not user:
+            return _redirect("/login")
+        if store.is_onboarded(user["email"]):
+            return _redirect("/")
+        with open(os.path.join(ROOT, "welcome.html")) as f:
+            return 200, _hdrs("text/html; charset=utf-8"), f.read().encode()
+
+    if route in ("/", ""):
+        if not user:
+            return _redirect("/login")
+        # The tutorial is mandatory: no chat until the agreement is signed.
+        if not store.is_onboarded(user["email"]):
+            return _redirect("/welcome")
+        return _static("/index.html")
+
+    return _static(route)
+
+
+def _post(route, user, body):
+    if route == "/api/onboard":
+        if not user:
+            return _json(401, {"error": "Signed out."})
+        b = json.loads(body or b"{}")
+        sig = (b.get("signature") or "").strip()
+        accepted = b.get("accepted") or []
+        # Never trust the client's own gating.
+        if len(accepted) < 4 or not all(accepted):
+            return _json(400, {"error": "All items must be accepted."})
+        if len(sig) < 2:
+            return _json(400, {"error": "Please type your full name to sign."})
+        store.record_agreement(user["email"], sig)
+        return _json(200, {"ok": True})
+
+    if route != "/api/chat":
+        return _json(404, {})
+    if not user:
+        return _json(401, {"error": "Signed out. Reload to sign in."})
+    if not store.is_onboarded(user["email"]):
+        return _json(403, {"error": "Complete the tutorial first."})
+
+    req = json.loads(body or b"{}")
+    # resolve() is an allowlist lookup; a bogus id falls back, never throws.
+    course = courses.resolve(req.get("course"))
+
+    if LIVE and PROVIDER.api_key:
+        from tutor.llm import USAGE, chat
+        msgs = build(course["name"], SCHOOL, courses.modules_text(course)) + \
+            req.get("history", []) + [{"role": "user", "content": req.get("message", "")}]
+        try:
+            raw = chat(msgs)
+        except Exception as e:
+            return _json(200, {"error": str(e)[:300]})
+        cost = str(USAGE)
+    else:
+        raw, cost = reply_for(req.get("message", "")), "offline (no API call)"
+
+    v = scan(raw)
+    return _json(200, {
+        "text": redact(raw, v, "⟨solution withheld⟩") if v.blocked else raw,
+        "blocked": v.blocked, "reasons": v.reasons, "usage": cost, "course": course["id"],
+    })
+
+
+# ------------------------------------------------------------- WSGI (Vercel)
+def app(environ, start_response):
+    method = environ.get("REQUEST_METHOD", "GET")
+    path = environ.get("PATH_INFO", "/")
+    if environ.get("QUERY_STRING"):
+        path += "?" + environ["QUERY_STRING"]
+    cookies = {k: v.value for k, v in SimpleCookie(environ.get("HTTP_COOKIE", "")).items()}
+    try:
+        length = int(environ.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        length = 0
+    body = environ["wsgi.input"].read(length) if length else b""
+
+    status, headers, out = dispatch(method, path, cookies, body)
+    reason = {200: "OK", 302: "Found", 400: "Bad Request", 401: "Unauthorized",
+              403: "Forbidden", 404: "Not Found"}.get(status, "OK")
+    start_response(f"{status} {reason}", headers + [("Content-Length", str(len(out)))])
+    return [out]
+
+
+application = app   # Django-style alias, also accepted by Vercel.
+
+
+# ------------------------------------------------------- local dev (stdlib)
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _send(self, code, body, ctype="application/json"):
-        b = body if isinstance(body, bytes) else body.encode()
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(b)))
+    def _run(self):
+        cookies = {k: v.value for k, v in
+                   SimpleCookie(self.headers.get("Cookie", "")).items()}
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n) if n else b""
+        status, headers, out = dispatch(self.command, self.path, cookies, body)
+        self.send_response(status)
+        for k, v in headers:
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(out)))
         self.end_headers()
-        self.wfile.write(b)
+        self.wfile.write(out)
 
-    # ---------------------------------------------------------- helpers
-    def _cookies(self):
-        c = SimpleCookie(self.headers.get("Cookie", ""))
-        return {k: v.value for k, v in c.items()}
-
-    def _user(self):
-        data = auth.unsign(self._cookies().get(SESSION_COOKIE, ""))
-        return data.get("user") if data else None
-
-    def _redirect(self, to, cookies=()):
-        self.send_response(302)
-        self.send_header("Location", to)
-        for name, val, age in cookies:
-            flag = f"{name}={val}; Path=/; HttpOnly; SameSite=Lax"
-            self.send_header("Set-Cookie", flag + (f"; Max-Age={age}" if age is not None else ""))
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def _login_page(self, error=None):
-        with open(os.path.join(ROOT, "login.html")) as f:
-            html = f.read()
-        if error:
-            html = html.replace("<!--ERROR-->", f'<div class="err">{error}</div>')
-        if not auth.configured():
-            html = html.replace('href="/auth/google" id="gbtn"',
-                                'href="#" id="gbtn" aria-disabled="true"')
-            html = html.replace("<!--ERROR-->",
-                '<div class="err">Google sign-in is not configured on this server. '
-                'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</div>')
-        self._send(200, html, "text/html; charset=utf-8")
-
-    # ------------------------------------------------------------ routes
-    def do_GET(self):
-        url = urlparse(self.path)
-        q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        route = url.path
-
-        if route == "/login":
-            return self._login_page(q.get("error"))
-
-        if route == "/logout":
-            return self._redirect("/login", [(SESSION_COOKIE, "", 0)])
-
-        if route == "/auth/google":
-            try:
-                goto, flow = auth.begin(REDIRECT_URI, q.get("next"))
-            except auth.AuthError as e:
-                return self._redirect("/login?error=" + quote(str(e)))
-            return self._redirect(goto, [(FLOW_COOKIE, flow, 600)])
-
-        if route == "/auth/callback":
-            try:
-                user, nxt = auth.complete(REDIRECT_URI, q, self._cookies().get(FLOW_COOKIE, ""))
-            except auth.AuthError as e:
-                return self._redirect("/login?error=" + quote(str(e)), [(FLOW_COOKIE, "", 0)])
-            store.touch_user(user["email"], user["name"])
-            tok = auth.sign({"user": user})
-            return self._redirect(auth.safe_next(nxt) or "/",
-                                  [(SESSION_COOKIE, tok, auth.MAX_AGE), (FLOW_COOKIE, "", 0)])
-
-        if route == "/welcome":
-            if not self._user():
-                return self._redirect("/login")
-            if store.is_onboarded(self._user()["email"]):
-                return self._redirect("/")
-            with open(os.path.join(ROOT, "welcome.html")) as f:
-                return self._send(200, f.read(), "text/html; charset=utf-8")
-
-        if route == "/api/courses":
-            if not self._user():
-                return self._send(401, json.dumps({"error": "Signed out."}))
-            return self._send(200, json.dumps({"courses": courses.all_courses()}))
-
-        if route == "/api/me":
-            u = self._user()
-            return self._send(200 if u else 401, json.dumps({"user": u}))
-
-        # Everything else requires a session, except the logo/static assets
-        # the login page itself needs.
-        if route in ("/", ""):
-            u = self._user()
-            if not u:
-                return self._redirect("/login")
-            # The tutorial is mandatory: no chat until the agreement is signed.
-            if not store.is_onboarded(u["email"]):
-                return self._redirect("/welcome")
-
-        path = "/index.html" if route in ("/", "") else route
-        fp = os.path.normpath(os.path.join(ROOT, path.lstrip("/")))
-        if not fp.startswith(ROOT) or not os.path.isfile(fp):
-            return self._send(404, "not found", "text/plain")
-        ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
-        with open(fp, "rb") as f:
-            self._send(200, f.read(), ctype)
-
-    def do_POST(self):
-        user = self._user()
-
-        if self.path == "/api/onboard":
-            if not user:
-                return self._send(401, json.dumps({"error": "Signed out."}))
-            n = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(n) or "{}")
-            sig = (body.get("signature") or "").strip()
-            accepted = body.get("accepted") or []
-            # Never trust the client's own gating.
-            if len(accepted) < 4 or not all(accepted):
-                return self._send(400, json.dumps({"error": "All items must be accepted."}))
-            if len(sig) < 2:
-                return self._send(400, json.dumps({"error": "Please type your full name to sign."}))
-            store.record_agreement(user["email"], sig)
-            return self._send(200, json.dumps({"ok": True}))
-
-        if self.path != "/api/chat":
-            return self._send(404, "{}")
-        if not user:
-            return self._send(401, json.dumps({"error": "Signed out. Reload to sign in."}))
-        if not store.is_onboarded(user["email"]):
-            return self._send(403, json.dumps({"error": "Complete the tutorial first."}))
-        n = int(self.headers.get("Content-Length", 0))
-        req = json.loads(self.rfile.read(n) or "{}")
-        history = req.get("history", [])
-        msg = req.get("message", "")
-
-        # resolve() is an allowlist lookup; a bogus id falls back, never throws.
-        course = courses.resolve(req.get("course"))
-
-        if LIVE and PROVIDER.api_key:
-            from tutor.llm import chat, USAGE
-            msgs = build(course["name"], SCHOOL, courses.modules_text(course)) + history + \
-                   [{"role": "user", "content": msg}]
-            try:
-                raw = chat(msgs)
-            except Exception as e:
-                return self._send(200, json.dumps({"error": str(e)[:300]}))
-            cost = str(USAGE)
-        else:
-            raw, cost = reply_for(msg), "offline (no API call)"
-
-        v = scan(raw)
-        shown = redact(raw, v, "⟨solution withheld⟩") if v.blocked else raw
-        self._send(200, json.dumps({
-            "text": shown, "blocked": v.blocked, "reasons": v.reasons,
-            "usage": cost, "course": course["id"],
-        }))
+    do_GET = do_POST = _run
 
 
 if __name__ == "__main__":
     store.init()
     mode = f"LIVE · {PROVIDER.name}/{PROVIDER.model}" if (LIVE and PROVIDER.api_key) else "OFFLINE demo"
     print(f"T0dd | {mode}")
+    print(f"  store: {store.backend()}")
     for w in auth.warn_if_insecure():
         print(f"  ! {w}")
     print(f"  http://localhost:{PORT}\n")

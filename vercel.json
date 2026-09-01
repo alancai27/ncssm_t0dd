@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "server.py": {
+      "excludeFiles": "{tests/**,migrations/**,cli.py,todd.db,logo.png,README.md}"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/server.py" }
+  ]
+}

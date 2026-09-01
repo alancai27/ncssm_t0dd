@@ -12,6 +12,21 @@ cp .env.example .env      # fill in the values
 python3.11 server.py      # http://localhost:8000
 ```
 
+## Deploying
+
+Routing lives in `dispatch()`, which is transport-agnostic. Two adapters call
+it: `H` (BaseHTTPRequestHandler) for local dev and `app` (WSGI) for Vercel.
+WSGI is a protocol, not a library, so this costs no dependencies.
+
+Vercel functions have an ephemeral filesystem, so SQLite there would accept a
+signature and silently lose it. Set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`
+and `tutor/store.py` switches to Postgres over PostgREST (still stdlib-only,
+via urllib). Run `migrations/001_init.sql` in the Supabase SQL editor first.
+
+Required env on the host: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`TODD_SECRET_KEY`, `TODD_REDIRECT_URI` (must exactly match a URI registered on
+the OAuth client), `TODD_LIVE=1`, `GEMINI_API_KEY`, plus the two Supabase vars.
+
 ## How the guardrails work
 
 The rule is not "no code". A student stuck on `ArrayList` syntax is not cheating,
@@ -52,10 +67,11 @@ terms never inherit consent that was given for different language.
 ## Layout
 
 ```
-server.py          routes, auth gate, static serving
+server.py          dispatch() + local and WSGI adapters
+migrations/        Postgres schema for Supabase
 tutor/guards.py    deterministic code detector  (tests: tests/test_guards.py)
 tutor/auth.py      Google OIDC + PKCE, stdlib port
-tutor/store.py     SQLite: users, agreements
+tutor/store.py     users + agreements; SQLite or Supabase
 tutor/courses.py   course catalog + id allowlist
 tutor/prompts.py   system prompt + few-shot
 tutor/config.py    model backends, one swap point
