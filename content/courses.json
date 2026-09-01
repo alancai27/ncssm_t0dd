@@ -1,0 +1,46 @@
+{
+  "_note": "PLACEHOLDER CONTENT. Course names and module lists are invented for development. Replace with real material from the CS department before any student uses this.",
+  "courses": [
+    {
+      "id": "cs2100",
+      "name": "CS 2100 · Data Structures",
+      "modules": [
+        "[Module 2.1] Java array basics: .length, zero-indexing, bounds.",
+        "[Module 4.2] Loop invariants: what must be true before, during, after a loop.",
+        "[Module 4.3] Array traversal patterns: accumulator, running-extremum, early-exit.",
+        "[Module 6.1] Linked lists: node references, head/tail, traversal.",
+        "[Module 7.4] Big-O: counting operations, dominant terms."
+      ]
+    },
+    {
+      "id": "cs1100",
+      "name": "CS 1100 · Intro to Computer Science",
+      "modules": [
+        "[Module 1.2] Variables, types, and assignment.",
+        "[Module 2.3] Conditionals and boolean logic.",
+        "[Module 3.1] Loops: while vs for, off-by-one errors.",
+        "[Module 5.2] Functions: parameters, return values, scope."
+      ]
+    },
+    {
+      "id": "cs3200",
+      "name": "CS 3200 · Algorithms",
+      "modules": [
+        "[Module 1.4] Recurrence relations and the Master Theorem.",
+        "[Module 3.2] Divide and conquer: mergesort, quicksort partitioning.",
+        "[Module 5.1] Greedy algorithms and exchange arguments.",
+        "[Module 6.3] Dynamic programming: subproblem structure, memoization."
+      ]
+    },
+    {
+      "id": "cs2400",
+      "name": "CS 2400 · Cybersecurity",
+      "modules": [
+        "[Module 2.2] Threat models: what an attacker can and cannot do.",
+        "[Module 4.1] Input validation and injection classes.",
+        "[Module 5.3] Hashing vs encryption: what each is for.",
+        "[Module 7.1] Authentication: sessions, tokens, and their failure modes."
+      ]
+    }
+  ]
+}

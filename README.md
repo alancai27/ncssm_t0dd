@@ -56,6 +56,7 @@ server.py          routes, auth gate, static serving
 tutor/guards.py    deterministic code detector  (tests: tests/test_guards.py)
 tutor/auth.py      Google OIDC + PKCE, stdlib port
 tutor/store.py     SQLite: users, agreements
+tutor/courses.py   course catalog + id allowlist
 tutor/prompts.py   system prompt + few-shot
 tutor/config.py    model backends, one swap point
 tutor/llm.py       OpenAI-compatible client + cost meter
@@ -67,7 +68,9 @@ web/               login, tutorial, chat UI
 - Intent classifier (the prose gap above)
 - Transcript logging, though the tutorial tells students their instructor can
   read conversations. **That promise is not yet backed by anything.**
-- Retrieval over real course modules; module citations are currently sample data
+- Retrieval over real course modules. `content/courses.json` is a placeholder
+  catalog with invented course names and modules; replace it with real CS
+  department material before students use this.
 
 ## Credits
 

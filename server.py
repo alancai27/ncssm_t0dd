@@ -28,7 +28,7 @@ _load_env()
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse, parse_qs, quote
 
-from tutor import auth, store
+from tutor import auth, courses, store
 from tutor.config import PROVIDER
 from tutor.guards import scan, redact
 from tutor.prompts import build
@@ -37,13 +37,9 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 LIVE = "--live" in sys.argv
 PORT = int(os.environ.get("PORT", "8000"))
 
-COURSE, SCHOOL = "CS 2100 · Data Structures", "NCSSM–Durham"
+SCHOOL = "NCSSM–Durham"
 REDIRECT_URI = os.environ.get("TODD_REDIRECT_URI", f"http://localhost:{PORT}/auth/callback")
 SESSION_COOKIE, FLOW_COOKIE = "todd_session", "todd_flow"
-ASSIGNMENT = "PS4 Q1: implement findMax(int[] arr) returning the largest element. No library calls."
-MODULES = """[Module 4.2] Loop invariants: what must be true before, during, after a loop.
-[Module 4.3] Array traversal patterns: accumulator, running-extremum, early-exit.
-[Module 2.1] Java array basics: .length, zero-indexing, bounds."""
 
 # Offline canned replies so the UI is fully explorable with no API key.
 CANNED = [
@@ -151,6 +147,11 @@ class H(BaseHTTPRequestHandler):
             with open(os.path.join(ROOT, "welcome.html")) as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
 
+        if route == "/api/courses":
+            if not self._user():
+                return self._send(401, json.dumps({"error": "Signed out."}))
+            return self._send(200, json.dumps({"courses": courses.all_courses()}))
+
         if route == "/api/me":
             u = self._user()
             return self._send(200 if u else 401, json.dumps({"user": u}))
@@ -202,9 +203,12 @@ class H(BaseHTTPRequestHandler):
         history = req.get("history", [])
         msg = req.get("message", "")
 
+        # resolve() is an allowlist lookup; a bogus id falls back, never throws.
+        course = courses.resolve(req.get("course"))
+
         if LIVE and PROVIDER.api_key:
             from tutor.llm import chat, USAGE
-            msgs = build(COURSE, SCHOOL, ASSIGNMENT, MODULES) + history + \
+            msgs = build(course["name"], SCHOOL, courses.modules_text(course)) + history + \
                    [{"role": "user", "content": msg}]
             try:
                 raw = chat(msgs)
@@ -217,7 +221,8 @@ class H(BaseHTTPRequestHandler):
         v = scan(raw)
         shown = redact(raw, v, "⟨solution withheld⟩") if v.blocked else raw
         self._send(200, json.dumps({
-            "text": shown, "blocked": v.blocked, "reasons": v.reasons, "usage": cost,
+            "text": shown, "blocked": v.blocked, "reasons": v.reasons,
+            "usage": cost, "course": course["id"],
         }))
 
 

@@ -51,6 +51,18 @@ body{position:relative;font-family:var(--font);background:var(--bg);color:var(--
 /* ---------- Sidebar ---------- */
 .sidebar{width:262px;flex:none;background:var(--sidebar);color:var(--text-inv);
   display:flex;flex-direction:column;padding:20px 12px 16px;gap:14px}
+.picker{padding:0 2px}
+.picker label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.7px;
+  color:#7E97BC;font-weight:650;padding:0 7px 5px}
+.picker select{width:100%;appearance:none;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.14);color:var(--text-inv);font:inherit;font-size:13px;
+  font-weight:550;padding:9px 28px 9px 11px;border-radius:9px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%239DB4D4' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center}
+.picker select:hover{background-color:rgba(255,255,255,.14)}
+.picker select:focus{outline:0;border-color:var(--blue-300)}
+.picker option{background:#0b2447;color:#eaf0f8}
+
 .newchat{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;
   background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
   color:var(--text-inv);border-radius:var(--radius-sm);font:inherit;font-size:13.5px;
@@ -149,6 +161,10 @@ textarea::placeholder{color:var(--text-2)}
 </div>
 <div class="app">
   <aside class="sidebar">
+    <div class="picker">
+      <label for="course">Course</label>
+      <select id="course"></select>
+    </div>
     <button class="newchat" onclick="newChat()">＋ New conversation</button>
     <div class="sect">Recent</div>
     <div class="hist" id="hist"></div>
@@ -181,7 +197,8 @@ textarea::placeholder{color:var(--text-2)}
 <script>
 const col=document.getElementById('col'), scroll=document.getElementById('scroll'),
       ta=document.getElementById('ta'), sendBtn=document.getElementById('send'),
-      hist=document.getElementById('hist'), usageEl=document.getElementById('usage');
+      hist=document.getElementById('hist'), usageEl=document.getElementById('usage'),
+      courseSel=document.getElementById('course');
 // No usage indicator in the UI; usageEl is null and guarded at every use.
 let history=[], chats=[{title:'PS4 · findMax',msgs:[]}], active=0;
 
@@ -231,7 +248,7 @@ async function send(){
   const t=thinking();
   try{
     const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,history})});
+      body:JSON.stringify({message:msg,history,course:courseSel.value})});
     const j=await r.json(); t.remove();
     if(j.error){ add('assistant','⚠️ '+j.error); return; }
     add('assistant',j.text,j.reasons);
@@ -260,6 +277,13 @@ ta.addEventListener('input',()=>{ ta.style.height='auto';
 ta.addEventListener('keydown',e=>{ if((e.key==='Enter'||e.keyCode===13)&&!e.shiftKey){e.preventDefault();send();} });
 document.documentElement.dataset.theme=localStorage.getItem('theme')||'light';
 drawHist(); ta.focus();
+fetch('/api/courses').then(r=>r.json()).then(j=>{
+  const saved=localStorage.getItem('course');
+  courseSel.innerHTML=j.courses.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if(saved && j.courses.some(c=>c.id===saved)) courseSel.value=saved;
+  courseSel.onchange=()=>{ localStorage.setItem('course',courseSel.value); newChat(); };
+}).catch(()=>{});
+
 fetch('/api/me').then(r=>r.ok?r.json():Promise.reject()).then(j=>{
   document.getElementById('whoName').textContent=j.user.name;
   document.getElementById('whoMail').textContent=j.user.email;
