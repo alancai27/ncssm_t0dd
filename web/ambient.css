@@ -1,0 +1,50 @@
+/* Ambient drifting blobs. Shared by login, welcome and the chat view -- this
+   lived inline in all three and had already diverged (welcome.html renamed the
+   keyframes), so it lives in one file now.
+
+   Geometry and colours are from techinance/styles.css. The motion is not:
+   the original was a 2-stop breathe that barely moved. These trace a four-point
+   loop over 50-75s, which reads as slow wandering rather than a pulse.
+   Requires --ice, --steel, --navy to be defined by the host page. */
+
+.ambient{position:fixed;z-index:0;inset:0;overflow:hidden;pointer-events:none}
+.ambient__blob{position:absolute;border-radius:50%;filter:blur(48px);opacity:.55;
+  will-change:transform}
+
+.ambient__blob--a{top:-8%;left:-6%;width:min(520px,70vw);height:min(520px,70vw);
+  background:color-mix(in srgb,var(--ice) 80%,var(--steel));
+  animation:ambient-drift-a 55s ease-in-out infinite}
+.ambient__blob--b{top:38%;right:-12%;width:min(440px,60vw);height:min(440px,60vw);
+  background:color-mix(in srgb,var(--steel) 28%,var(--ice));opacity:.35;
+  animation:ambient-drift-b 68s ease-in-out infinite}
+.ambient__blob--c{bottom:-10%;left:22%;width:min(380px,55vw);height:min(380px,55vw);
+  background:color-mix(in srgb,var(--ice) 70%,var(--navy));opacity:.28;
+  animation:ambient-drift-c 79s ease-in-out infinite}
+
+/* Odd durations (55/68/79s) keep the three from re-syncing into a visible pulse. */
+@keyframes ambient-drift-a{
+  0%,100%{transform:translate(0,0) scale(1)}
+  25%    {transform:translate(16%,9%) scale(1.09)}
+  50%    {transform:translate(7%,23%) scale(1.03)}
+  75%    {transform:translate(-11%,12%) scale(1.12)}
+}
+@keyframes ambient-drift-b{
+  0%,100%{transform:translate(0,0) scale(1)}
+  25%    {transform:translate(-14%,-11%) scale(1.07)}
+  50%    {transform:translate(-22%,6%) scale(1.13)}
+  75%    {transform:translate(-6%,17%) scale(1.02)}
+}
+@keyframes ambient-drift-c{
+  0%,100%{transform:translate(0,0) scale(1)}
+  25%    {transform:translate(13%,-14%) scale(1.11)}
+  50%    {transform:translate(26%,-4%) scale(1.05)}
+  75%    {transform:translate(9%,-19%) scale(1.14)}
+}
+
+/* Dark mode: the blobs read as muddy smears at full strength, so drop them
+   to a faint glow and widen the blur. */
+:root[data-theme="dark"] .ambient__blob{opacity:.20;filter:blur(64px)}
+:root[data-theme="dark"] .ambient__blob--b{opacity:.14}
+:root[data-theme="dark"] .ambient__blob--c{opacity:.12}
+
+@media(prefers-reduced-motion:reduce){.ambient__blob{animation:none!important}}

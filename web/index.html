@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ambient.css">
 <style>
 /* ---- Theme tokens. Retheming = edit this block only. ---- */
 :root{
@@ -43,40 +44,13 @@ html,body{height:100%}
 body{position:relative;font-family:var(--font);background:var(--bg);color:var(--text);
   font-size:15.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
 
-/* Ambient blobs -- decorative only, behind content. From techinance/ambient.js */
-.ambient{position:fixed;z-index:0;inset:0;overflow:hidden;pointer-events:none}
-.ambient__blob{position:absolute;border-radius:50%;filter:blur(48px);opacity:.55;will-change:transform}
-.ambient__blob--a{top:-8%;left:-6%;width:min(520px,70vw);height:min(520px,70vw);
-  background:color-mix(in srgb,var(--ice) 80%,var(--steel));animation:ambient-drift-a 28s ease-in-out infinite}
-.ambient__blob--b{top:38%;right:-12%;width:min(440px,60vw);height:min(440px,60vw);
-  background:color-mix(in srgb,var(--steel) 28%,var(--ice));opacity:.35;
-  animation:ambient-drift-b 34s ease-in-out infinite}
-.ambient__blob--c{bottom:-10%;left:22%;width:min(380px,55vw);height:min(380px,55vw);
-  background:color-mix(in srgb,var(--ice) 70%,var(--navy));opacity:.28;
-  animation:ambient-drift-c 40s ease-in-out infinite}
-:root[data-theme="dark"] .ambient__blob{opacity:.20;filter:blur(64px)}
-:root[data-theme="dark"] .ambient__blob--b{opacity:.14}
-:root[data-theme="dark"] .ambient__blob--c{opacity:.12}
-@keyframes ambient-drift-a{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(4%,6%) scale(1.08)}}
-@keyframes ambient-drift-b{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-5%,-4%) scale(1.06)}}
-@keyframes ambient-drift-c{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(3%,-5%) scale(1.1)}}
-@media(prefers-reduced-motion:reduce){.ambient__blob{animation:none !important}}
+:root[data-theme="dark"] :root[data-theme="dark"] :root[data-theme="dark"] @media(prefers-reduced-motion:reduce){}
 
 .app{position:relative;z-index:1;display:flex;height:100vh;overflow:hidden}
 
 /* ---------- Sidebar ---------- */
 .sidebar{width:262px;flex:none;background:var(--sidebar);color:var(--text-inv);
-  display:flex;flex-direction:column;padding:16px 12px;gap:14px}
-.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 2px}
-/* The mark is navy on transparent; on the navy sidebar it needs a light
-   chip behind it or it disappears. */
-.crest{width:34px;height:34px;flex:none;object-fit:contain;border-radius:9px;
-  background:var(--ice);padding:3px;box-shadow:0 1px 4px rgba(0,0,0,.22)}
-.crest-fb{border-radius:8px;background:var(--ice);display:grid;place-items:center;font-size:19px}
-.brand .zero{color:var(--ice);font-size:.9em;
-  font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
-.brand h1{font-size:14px;font-weight:650;letter-spacing:-.1px;line-height:1.25}
-.brand small{display:block;font-size:11.5px;font-weight:450;color:#9DB4D4}
+  display:flex;flex-direction:column;padding:20px 12px 16px;gap:14px}
 .newchat{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;
   background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
   color:var(--text-inv);border-radius:var(--radius-sm);font:inherit;font-size:13.5px;
@@ -175,11 +149,6 @@ textarea::placeholder{color:var(--text-2)}
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">
-      <img class="crest" src="/todd-128.png" alt=""
-           onerror="this.outerHTML='&lt;div class=&quot;crest crest-fb&quot;&gt;🦄&lt;/div&gt;'">
-      <h1>T<span class="zero">0</span>dd<small>NCSSM · CS tutor</small></h1>
-    </div>
     <button class="newchat" onclick="newChat()">＋ New conversation</button>
     <div class="sect">Recent</div>
     <div class="hist" id="hist"></div>
@@ -203,7 +172,7 @@ textarea::placeholder{color:var(--text-2)}
           <textarea id="ta" rows="1" placeholder="Ask about a concept, or describe where you're stuck…"></textarea>
           <button class="send" id="send" disabled onclick="send()" aria-label="Send">↑</button>
         </div>
-        <div class="hint">T0dd can be wrong. Your course modules are the source of truth <span class="sep">·</span> Enter to send, Shift+Enter for newline</div>
+        <div class="hint">T0dd can be wrong. Your course modules are the source of truth. <span class="sep">·</span> Enter to send, Shift+Enter for newline</div>
       </div>
     </div>
   </main>
