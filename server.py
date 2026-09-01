@@ -134,7 +134,31 @@ def _static(path):
 
 # ----------------------------------------------------------------- dispatch
 def dispatch(method, raw_path, cookies, body):
-    """(status, [(header, value)], bytes). No transport details in here."""
+    """(status, [(header, value)], bytes). No transport details in here.
+
+    Wraps _dispatch so a backend failure surfaces as a readable message
+    instead of an opaque 500 -- the common one being Supabase reachable but
+    its tables not created yet."""
+    try:
+        return _dispatch(method, raw_path, cookies, body)
+    except Exception as e:
+        detail = str(e)
+        if "Could not find the table" in detail or "PGRST205" in detail:
+            msg = ("Database not initialised: run migrations/001_init.sql in the "
+                   "Supabase SQL editor, then reload.")
+        else:
+            msg = f"Server error: {detail[:300]}"
+        if raw_path.startswith("/api/"):
+            return _json(500, {"error": msg})
+        page = ("<!doctype html><meta charset=utf-8><title>T0dd</title>"
+                "<style>body{font-family:-apple-system,sans-serif;max-width:34rem;"
+                "margin:18vh auto;padding:0 24px;color:#0b2447;line-height:1.6}"
+                "code{background:#eef4fa;padding:2px 6px;border-radius:5px}</style>"
+                f"<h2>T0dd is not ready yet</h2><p>{msg}</p>")
+        return 500, _hdrs("text/html; charset=utf-8"), page.encode()
+
+
+def _dispatch(method, raw_path, cookies, body):
     url = urlparse(raw_path)
     route = url.path
     q = {k: v[0] for k, v in parse_qs(url.query).items()}
@@ -253,7 +277,8 @@ def app(environ, start_response):
 
     status, headers, out = dispatch(method, path, cookies, body)
     reason = {200: "OK", 302: "Found", 400: "Bad Request", 401: "Unauthorized",
-              403: "Forbidden", 404: "Not Found"}.get(status, "OK")
+              403: "Forbidden", 404: "Not Found",
+              500: "Internal Server Error"}.get(status, "OK")
     start_response(f"{status} {reason}", headers + [("Content-Length", str(len(out)))])
     return [out]
 
