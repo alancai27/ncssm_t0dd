@@ -4,8 +4,5 @@
     "server.py": {
       "excludeFiles": "{tests/**,migrations/**,cli.py,todd.db,logo.png,README.md}"
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/server.py" }
-  ]
+  }
 }
