@@ -1,0 +1,74 @@
+# T0dd
+
+A CS tutor chatbot for NCSSM. It answers questions about course material and
+explains concepts, but it does not produce solutions to assignments.
+
+Runs on the Python standard library only. No pip install, no node, no build step.
+
+## Running it
+
+```bash
+cp .env.example .env      # fill in the values
+python3.11 server.py      # http://localhost:8000
+```
+
+## How the guardrails work
+
+The rule is not "no code". A student stuck on `ArrayList` syntax is not cheating,
+and refusing that just sends them to ChatGPT. The rule is "no assignment-shaped
+solutions", enforced in layers:
+
+1. **System prompt + few-shot** (`tutor/prompts.py`) sets the tutoring behavior and
+   includes worked refusals for common pressure tactics.
+2. **Deterministic output filter** (`tutor/guards.py`) parses what the model
+   actually returned and blocks on *structure*: control flow, function
+   definitions, or length past a per-course threshold. Python is checked with a
+   real `ast.parse`; C-family syntax falls back to heuristics. This is the only
+   layer that does not depend on the model cooperating.
+3. **Onboarding gate** (`web/welcome.html`) requires every student to read a
+   tutorial and sign an academic integrity agreement before the chat responds.
+
+### Known gap
+
+`guards.scan()` cannot detect a solution written as prose. "Loop through the
+array, track the largest, return it" is an answer in English and passes the
+filter. Closing that is the job of an intent classifier, which is not built yet.
+A clean pass from `scan()` does not mean a response was safe.
+
+## Auth
+
+Google OpenID Connect, authorization-code flow with PKCE, ported from
+`ncssm_lost_and_found`. The `@ncssm.edu` restriction is enforced **server-side**
+against the verified email Google returns. The `hd` parameter only pre-filters
+Google's account chooser; a student can strip it, so nothing relies on it.
+
+## Agreement records
+
+`todd.db` (SQLite, gitignored) records each acceptance with the email, timestamp,
+typed signature, and **which version of the agreement text was shown**. Bumping
+`AGREEMENT_VERSION` in `tutor/store.py` forces everyone to re-accept, so reworded
+terms never inherit consent that was given for different language.
+
+## Layout
+
+```
+server.py          routes, auth gate, static serving
+tutor/guards.py    deterministic code detector  (tests: tests/test_guards.py)
+tutor/auth.py      Google OIDC + PKCE, stdlib port
+tutor/store.py     SQLite: users, agreements
+tutor/prompts.py   system prompt + few-shot
+tutor/config.py    model backends, one swap point
+tutor/llm.py       OpenAI-compatible client + cost meter
+web/               login, tutorial, chat UI
+```
+
+## Not built yet
+
+- Intent classifier (the prose gap above)
+- Transcript logging, though the tutorial tells students their instructor can
+  read conversations. **That promise is not yet backed by anything.**
+- Retrieval over real course modules; module citations are currently sample data
+
+## Credits
+
+Visual design ported from [techinance](https://github.com/alancai27/techinance).
